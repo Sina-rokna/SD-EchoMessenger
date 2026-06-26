@@ -15,10 +15,10 @@ diagrams, and prepare the initial user interface designs.
 
 -   Sina Mohammadi -- Product Owner
 -   Mohammad Ermia Ghaseri -- Scrum Master
--   Amir Hossein Ghasemipour -- Backend & Data Analyst
--   Amir Mohammad Shahrezaei -- DevOps & Infrastructure Analyst
--   Mehrshad Valizadeh Arjmand -- UX/UI Designer
--   Nima Noghtei -- System Architect & QA
+-   Mehrshad Valizadeh Arjmand -- Data & Backend Analyst
+-   Amir Mohammad Shahrezaei -- Infrastructure Analyst
+-   Amir Hossein Ghasemipour -- Wire-Frame Designer
+-   Nima Notghi -- System Architect & QA
 
 ## Folder Structure
 
