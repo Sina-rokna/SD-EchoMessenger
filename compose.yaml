@@ -1,0 +1,191 @@
+name: echo-messenger
+
+x-backend: &backend
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+  env_file:
+    - .env
+  restart: unless-stopped
+  networks:
+    - echo-network
+
+x-backend-dependencies: &backend-dependencies
+  postgres:
+    condition: service_healthy
+  redis:
+    condition: service_healthy
+  rabbitmq:
+    condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-echo_messenger}
+      POSTGRES_USER: ${POSTGRES_USER:-echo_messenger}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-echo_messenger}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    networks:
+      - echo-network
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    networks:
+      - echo-network
+
+  rabbitmq:
+    image: rabbitmq:4.3.4-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-echo_messenger}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-echo_messenger}
+    volumes:
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    networks:
+      - echo-network
+
+  backend:
+    <<: *backend
+    command:
+      - daphne
+      - --bind
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - config.asgi:application
+    environment:
+      RUN_MIGRATIONS: "1"
+      COLLECT_STATIC: "1"
+    depends_on: *backend-dependencies
+    volumes:
+      - media-data:/app/backend/media
+      - static-data:/app/backend/staticfiles
+    expose:
+      - "8000"
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - --fail
+        - --silent
+        - http://localhost:8000/api/v1/health/live/
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  worker:
+    <<: *backend
+    command:
+      - celery
+      - --app
+      - config
+      - worker
+      - --loglevel
+      - INFO
+      - --concurrency
+      - "2"
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      - media-data:/app/backend/media
+
+  beat:
+    <<: *backend
+    command:
+      - celery
+      - --app
+      - config
+      - beat
+      - --loglevel
+      - INFO
+      - --schedule
+      - /tmp/celerybeat-schedule
+    depends_on:
+      backend:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  backend-test:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        INSTALL_DEV: "1"
+    profiles: ["test"]
+    environment:
+      DJANGO_DEBUG: "1"
+      DJANGO_SECRET_KEY: container-test-secret
+      DATABASE_ENGINE: sqlite
+      SQLITE_PATH: /tmp/echo-messenger-tests.sqlite3
+      CHANNEL_LAYER_BACKEND: memory
+      CELERY_TASK_ALWAYS_EAGER: "1"
+    command: pytest
+
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+    ports:
+      - "${APP_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - media-data:/srv/media:ro
+      - static-data:/srv/static:ro
+    restart: unless-stopped
+    networks:
+      - echo-network
+
+  frontend-test:
+    image: node:22-alpine
+    profiles: ["test"]
+    working_dir: /app
+    command: sh -c "npm ci && npm test -- --run"
+    volumes:
+      - ./frontend:/app
+      - frontend-node-modules:/app/node_modules
+
+volumes:
+  postgres-data:
+  redis-data:
+  rabbitmq-data:
+  media-data:
+  static-data:
+  frontend-node-modules:
+
+networks:
+  echo-network:
+    driver: bridge
