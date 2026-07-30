@@ -29,7 +29,7 @@ diagrams, and prepare the initial user interface designs.
 -   **wireframes/**: Images of the initial user interface designs.
 
 
-# EchoMessenger
+# EchoMessenger System - Phase 2 - Implementation
 
 A complete Discord-like messaging product for the Systems Analysis and Design
 course at Sharif University of Technology (Spring 2026).
