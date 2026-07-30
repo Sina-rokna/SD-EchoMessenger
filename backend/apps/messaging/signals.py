@@ -1,0 +1,15 @@
+from django.db import transaction
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
+
+from .models import Attachment
+
+
+@receiver(post_delete, sender=Attachment)
+def delete_attachment_file_after_commit(sender, instance, **kwargs):
+    """Keep protected storage in sync after message or space deletion."""
+    if not instance.file or not instance.file.name:
+        return
+    storage = instance.file.storage
+    name = instance.file.name
+    transaction.on_commit(lambda: storage.delete(name))
